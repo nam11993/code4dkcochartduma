@@ -107,11 +107,11 @@ load_dotenv()
 # =====================
 # Config
 # =====================
-MAX_WORKERS = int(os.getenv("MAX_WORKERS", 30))
+MAX_WORKERS = int(os.getenv("MAX_WORKERS", 30))  # Về như cũ
 DAILY_LOOKBACK_DAYS = 120   # for MA30/RSI
 INTRADAY_MINUTES = 1        # resolution for realtime price
 CHUNK_SIZE = 100            # symbols per Telegram message
-REQUEST_TIMEOUT = 45
+REQUEST_TIMEOUT = 45        # Về như cũ
 
 # VNDIRECT endpoints
 FINFO_STOCKS = "https://api.vndirect.com.vn/v4/stocks"
@@ -699,10 +699,10 @@ def scan_symbols_sin(symbols: List[str]) -> List[dict]:
         with futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
             future_to_symbol = {ex.submit(fetch_symbol_bundle_sin, symbol): symbol for symbol in symbols}
             
-            for future in futures.as_completed(future_to_symbol, timeout=30):
+            for future in futures.as_completed(future_to_symbol, timeout=30):  # Về như cũ
                 symbol = future_to_symbol[future]
                 try:
-                    bundle = future.result(timeout=5)
+                    bundle = future.result(timeout=5)  # Về như cũ
                     if "error" in bundle:
                         continue
                     
@@ -724,7 +724,7 @@ def scan_symbols_sin(symbols: List[str]) -> List[dict]:
                     continue
                     
     except futures.TimeoutError:
-        print(f"⚠️ Timeout scanning batch")
+        pass  # Timeout là bình thường, không cần thông báo
     except Exception as e:
         print(f"❌ Error in scan_symbols_sin: {e}")
     
@@ -737,10 +737,10 @@ def scan_symbols_sin2(symbols: List[str]) -> List[dict]:
         with futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
             future_to_symbol = {ex.submit(fetch_symbol_bundle_sin2, symbol): symbol for symbol in symbols}
             
-            for future in futures.as_completed(future_to_symbol, timeout=30):
+            for future in futures.as_completed(future_to_symbol, timeout=30):  # Về như cũ
                 symbol = future_to_symbol[future]
                 try:
-                    bundle = future.result(timeout=5)
+                    bundle = future.result(timeout=5)  # Về như cũ
                     if "error" in bundle:
                         continue
                     
@@ -759,7 +759,7 @@ def scan_symbols_sin2(symbols: List[str]) -> List[dict]:
                     continue
                     
     except futures.TimeoutError:
-        print(f"⚠️ Timeout scanning batch sin2")
+        pass  # Timeout là bình thường, không cần thông báo
     except Exception as e:
         print(f"❌ Error in scan_symbols_sin2: {e}")
     
@@ -772,10 +772,10 @@ def scan_symbols_sin3(symbols: List[str]) -> List[dict]:
         with futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
             future_to_symbol = {ex.submit(fetch_symbol_bundle_sin3, symbol): symbol for symbol in symbols}
             
-            for future in futures.as_completed(future_to_symbol, timeout=30):
+            for future in futures.as_completed(future_to_symbol, timeout=30):  # Về như cũ
                 symbol = future_to_symbol[future]
                 try:
-                    bundle = future.result(timeout=5)
+                    bundle = future.result(timeout=5)  # Về như cũ
                     if "error" in bundle:
                         continue
                     
@@ -794,7 +794,7 @@ def scan_symbols_sin3(symbols: List[str]) -> List[dict]:
                     continue
                     
     except futures.TimeoutError:
-        print(f"⚠️ Timeout scanning batch sin3")
+        pass  # Timeout là bình thường, không cần thông báo
     except Exception as e:
         print(f"❌ Error in scan_symbols_sin3: {e}")
     
@@ -1304,6 +1304,43 @@ def create_candlestick_chart(symbol: str, data: pd.DataFrame):
     if data.empty:
         return None
     
+    # Clean data - xử lý mạnh mẽ hơn để tránh gaps
+    data = data.dropna(subset=['O', 'H', 'L', 'C', 'V'])
+    
+    if data.empty:
+        return None
+    
+    # Reindex để đảm bảo không có gaps trong index
+    data = data.sort_index()
+    
+    # Tạo một DatetimeIndex liên tục (business days only)
+    if len(data) > 1:
+        start_date = data.index.min()
+        end_date = data.index.max()
+        
+        # Tạo business day range (loại bỏ weekend)
+        full_range = pd.date_range(start=start_date, end=end_date, freq='B')
+        
+        # Reindex với full range và interpolate
+        data = data.reindex(full_range)
+        
+        # Interpolate để fill gaps - sử dụng linear interpolation
+        data['O'] = data['O'].interpolate(method='linear').ffill().bfill()
+        data['H'] = data['H'].interpolate(method='linear').ffill().bfill()
+        data['L'] = data['L'].interpolate(method='linear').ffill().bfill()
+        data['C'] = data['C'].interpolate(method='linear').ffill().bfill()
+        data['V'] = data['V'].interpolate(method='linear').ffill().bfill()
+        
+        # Đảm bảo OHLC logic hợp lý sau interpolation
+        data['H'] = data[['O', 'H', 'L', 'C']].max(axis=1)
+        data['L'] = data[['O', 'H', 'L', 'C']].min(axis=1)
+    
+    # Drop NaN rows cuối cùng nếu còn
+    data = data.dropna()
+    
+    if data.empty:
+        return None
+    
     # Tính các technical indicators
     C = data['C']
     H = data['H'] 
@@ -1311,17 +1348,17 @@ def create_candlestick_chart(symbol: str, data: pd.DataFrame):
     O = data['O']
     V = data['V']
     
-    # Moving Averages
-    MA20 = sma(C, 20)
-    MA50 = sma(C, 50)
-    EMA34 = ema(C, 34)
-    EMA89 = ema(C, 89)
+    # Moving Averages - với interpolation
+    MA20 = sma(C, 20).interpolate().ffill().bfill()
+    MA50 = sma(C, 50).interpolate().ffill().bfill()
+    EMA34 = ema(C, 34).interpolate().ffill().bfill()
+    EMA89 = ema(C, 89).interpolate().ffill().bfill()
     
-    # RSI
-    RSI14 = rsi(C, 14)
+    # RSI - với interpolation
+    RSI14 = rsi(C, 14).interpolate().ffill().bfill()
     
     # Volume MA
-    VOL_MA20 = sma(V, 20)
+    VOL_MA20 = sma(V, 20).interpolate().ffill().bfill()
     
     # Tạo subplots: [Candlestick + MA], [Volume], [RSI]
     fig = make_subplots(
@@ -1346,25 +1383,33 @@ def create_candlestick_chart(symbol: str, data: pd.DataFrame):
         row=1, col=1
     )
     
-    # Moving Averages
+    # Moving Averages - với connectgaps và mode lines
     fig.add_trace(
         go.Scatter(x=data.index, y=MA20, name='MA20', 
-                  line=dict(color='blue', width=1)),
+                  mode='lines',
+                  line=dict(color='blue', width=2),
+                  connectgaps=True),
         row=1, col=1
     )
     fig.add_trace(
         go.Scatter(x=data.index, y=MA50, name='MA50', 
-                  line=dict(color='orange', width=1)),
+                  mode='lines',
+                  line=dict(color='orange', width=2),
+                  connectgaps=True),
         row=1, col=1
     )
     fig.add_trace(
         go.Scatter(x=data.index, y=EMA34, name='EMA34', 
-                  line=dict(color='red', width=1)),
+                  mode='lines',
+                  line=dict(color='red', width=2),
+                  connectgaps=True),
         row=1, col=1
     )
     fig.add_trace(
         go.Scatter(x=data.index, y=EMA89, name='EMA89', 
-                  line=dict(color='purple', width=1)),
+                  mode='lines',
+                  line=dict(color='purple', width=2),
+                  connectgaps=True),
         row=1, col=1
     )
     
@@ -1376,14 +1421,19 @@ def create_candlestick_chart(symbol: str, data: pd.DataFrame):
     )
     fig.add_trace(
         go.Scatter(x=data.index, y=VOL_MA20, name='Vol MA20', 
-                  line=dict(color='red', width=1)),
+                  mode='lines',
+                  line=dict(color='red', width=2),
+                  connectgaps=True),
         row=2, col=1
     )
     
-    # RSI
+    # RSI - với connectgaps và mode lines
     fig.add_trace(
         go.Scatter(x=data.index, y=RSI14, name='RSI(14)', 
-                  line=dict(color='green', width=2), showlegend=False),
+                  mode='lines',
+                  line=dict(color='green', width=2), 
+                  showlegend=False,
+                  connectgaps=True),
         row=3, col=1
     )
     
@@ -1407,12 +1457,26 @@ def create_candlestick_chart(symbol: str, data: pd.DataFrame):
             xanchor="right",
             x=1
         ),
-        margin=dict(l=50, r=50, t=100, b=50)
+        margin=dict(l=50, r=50, t=100, b=50),
+        # Thêm config để xử lý gaps tốt hơn
+        xaxis=dict(
+            type='date',
+            rangeslider_visible=False,
+            # Loại bỏ weekends và holidays
+            rangebreaks=[
+                dict(bounds=["sat", "mon"]),  # hide weekends
+            ]
+        )
     )
     
-    # X-axis formatting
+    # X-axis formatting - áp dụng cho tất cả subplots
     fig.update_xaxes(
+        type='date',
         rangeslider_visible=False,
+        # Loại bỏ weekends để chart liên tục hơn
+        rangebreaks=[
+            dict(bounds=["sat", "mon"]),  # hide weekends
+        ],
         rangeselector=dict(
             buttons=list([
                 dict(count=30, label="30D", step="day", stepmode="backward"),
